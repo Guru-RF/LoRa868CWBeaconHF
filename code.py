@@ -42,6 +42,7 @@ FREQ = config.FREQ
 BEACON = config.BEACON
 MODE = config.MODE
 BEACONDELAY = config.BEACONDELAY
+OFFSET = config.OFFSET
 
 # Vars
 KEYBOARD = False
@@ -62,7 +63,12 @@ sm = rp2pio.StateMachine(
     first_set_pin=board.GP16,
 )
 
-print("real frequency: ", sm.frequency)
+# Tune Frequency
+print("Measured Frequency: ", (sm.frequency + OFFSET)/1000)
+sm.stop()
+sm.frequency=(FREQ - sm.frequency) + FREQ
+sm.restart()
+print("Tuned To Configured Frequency: ", (sm.frequency + OFFSET)/1000)
 sm.stop()
 
 # setup buzzer (set duty cycle to ON to sound)
@@ -70,7 +76,6 @@ buzzer = pwmio.PWMOut(board.GP10,variable_frequency=True)
 buzzer.frequency = SIDEFREQ
 OFF = 0
 ON = 2**15
-
 
 # leds
 txLED = digitalio.DigitalInOut(board.GP3)
