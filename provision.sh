@@ -25,5 +25,6 @@ if [ -d "$DIR" ]; then
   echo "Updating LORACWB software in ${DIR}..."
   cp -r lib /Volumes/LORACWB
   cp *.py /Volumes/LORACWB
+  diskutil unmount /Volumes/LORACWB
   echo "done"
 fi
