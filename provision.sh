@@ -20,10 +20,10 @@ if [ -d "$DIR" ]; then
   echo "done"
 fi
 
-DIR="/Volumes/SMARTCW"
+DIR="/Volumes/LORACWB"
 if [ -d "$DIR" ]; then
-  echo "Updating demo software in ${DIR}..."
-  cp -r lib /Volumes/SMARTCW
-  cp *.py /Volumes/SMARTCW
+  echo "Updating LORACWB software in ${DIR}..."
+  cp -r lib /Volumes/LORACWB
+  cp *.py /Volumes/LORACWB
   echo "done"
 fi
