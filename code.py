@@ -60,7 +60,7 @@ sm = rp2pio.StateMachine(
     assembled,
     frequency=FREQ,
     init=adafruit_pioasm.assemble("set pindirs 1"),
-    first_set_pin=board.GP16,
+    first_set_pin=board.GP14,
 )
 
 # Tune Frequency
@@ -183,7 +183,7 @@ def dit_time():
 # send to computer
 def send(c):
 #   print(c,end='')
-    if serial.connected:
+    if serial is not None:
        serial.write(str.encode(c))
         
 # transmit pattern
