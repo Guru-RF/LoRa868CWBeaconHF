@@ -1,115 +1,63 @@
 # LoraCWBeacon Copyright 2023 Joeri Van Dooren (ON3URE)
 
-# based on xiaoKey
-
-# xiaoKey - a computer connected iambic keyer
-# Copyright 2022 Mark Woodworth (AC9YW)
-# https://github.com/MarkWoodworth/xiaokey/blob/master/code/code.py
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 import time
 import board
 import digitalio
-import pwmio
+import busio
 from digitalio import DigitalInOut, Direction, Pull
-import usb_cdc
-import rp2pio
-import adafruit_pioasm
+import adafruit_si5351
 import config
+import asyncio
 
 # User config
 WPM = config.WPM
-SIDETONE = config.SIDETONE
-SIDEFREQ = config.SIDEFREQ
 FREQ = config.FREQ
 BEACON = config.BEACON
-MODE = config.MODE
 BEACONDELAY = config.BEACONDELAY
-OFFSET = config.OFFSET
 
-# Vars
-KEYBOARD = False
-
-# PIO
-osc = """
-.program osc
-    set pins 1 [1] 
-    set pins 0 [1]  
-"""
-
-assembled = adafruit_pioasm.assemble(osc)
-
-sm = rp2pio.StateMachine(
-    assembled,
-    frequency=FREQ,
-    init=adafruit_pioasm.assemble("set pindirs 1"),
-    first_set_pin=board.GP14,
-)
-
-# Tune Frequency
-print("Measured Frequency: ", (sm.frequency + OFFSET)/1000)
-sm.stop()
-sm.frequency=(FREQ - sm.frequency) + FREQ
-sm.restart()
-print("Tuned To Configured Frequency: ", (sm.frequency + OFFSET)/1000)
-sm.stop()
-
-# setup buzzer (set duty cycle to ON to sound)
-buzzer = pwmio.PWMOut(board.GP10,variable_frequency=True)
-buzzer.frequency = SIDEFREQ
-OFF = 0
-ON = 2**15
+# Create the I2C interface.
+XTAL_FREQ = 25000000
+i2c = busio.I2C(scl=board.GP19, sda=board.GP18)
+si5351 = adafruit_si5351.SI5351(i2c)
 
 # leds
-txLED = digitalio.DigitalInOut(board.GP3)
-txLED.direction = digitalio.Direction.OUTPUT
-txLED.value = False
-
-pwrLED = digitalio.DigitalInOut(board.GP4)
+pwrLED = digitalio.DigitalInOut(board.GP9)
 pwrLED.direction = digitalio.Direction.OUTPUT
 pwrLED.value = True
 
-loraLED = digitalio.DigitalInOut(board.GP5)
+txLED = digitalio.DigitalInOut(board.GP10)
+txLED.direction = digitalio.Direction.OUTPUT
+txLED.value = False
+
+loraLED = digitalio.DigitalInOut(board.GP11)
 loraLED.direction = digitalio.Direction.OUTPUT
-loraLED.value = True
+loraLED.value = False
+
+
+def setFrequency(frequency):
+    xtalFreq = XTAL_FREQ
+    divider = int(900000000 / frequency)
+    if (divider % 2): divider -= 1
+    pllFreq = divider * frequency
+    mult = int(pllFreq / xtalFreq)
+    l = int(pllFreq % xtalFreq)
+    f = l
+    f *= 1048575
+    f /= xtalFreq
+    num = int(f)
+    denom = 1048575
+    si5351.pll_a.configure_fractional(mult, num, denom)
+    si5351.clock_0.configure_integer(si5351.pll_a, divider)	
 
 def led(what):
     if what=='tx':
         txLED.value = True
-        loraLED.value = False
-        pwrLED.value = False
     if what=='txOFF':
         txLED.value = False
-        loraLED.value = False
-        pwrLED.value = True
     if what=='lora':
-        txLED.value = False
         loraLED.value = True
-        pwrLED.value = False
     if what=='loraOFF':
-        txLED.value = False
         loraLED.value = False
-        pwrLED.value = True
-
-# setup usb serial
-serial = usb_cdc.data
 
 # setup encode and decode
 encodings = {}
@@ -163,16 +111,11 @@ MAP('.......','#') # error
 # key down and up
 def cw(on):
     if on:
-        # key.value = True
         led('tx')
-        sm.restart()
-        if SIDETONE:
-           buzzer.duty_cycle = ON
+        si5351.outputs_enabled = True
     else:
         led('txOFF')
-        sm.stop()
-        # key.value = False
-        buzzer.duty_cycle = OFF
+        si5351.outputs_enabled = False
 
 # timing
 def dit_time():
@@ -180,12 +123,6 @@ def dit_time():
     PARIS = 50 
     return 60.0 / WPM / PARIS
 
-# send to computer
-def send(c):
-#   print(c,end='')
-    if serial is not None:
-       serial.write(str.encode(c))
-        
 # transmit pattern
 def play(pattern):
     for sound in pattern:
@@ -203,34 +140,46 @@ def play(pattern):
             time.sleep(4*dit_time())
     time.sleep(2*dit_time())
 
-# receive, send, and play keystrokes from computer
-def serials():
-    if serial.connected:
-        if serial.in_waiting > 0:
-            letter = serial.read().decode('utf-8')
-            send(letter)
-            play(encode(letter))
-
-
 # play beacon and pause            
 def beacon():
     global cwBeacon
     letter = cwBeacon[:1]
     cwBeacon = cwBeacon[1:]
-    send(letter)
+    print(letter, end="")
     play(encode(letter))
 
 
-# run
-delay = " " * BEACONDELAY
-cwBeacon = BEACON + delay
-while True:
-    if MODE is "SERIAL":
-        serials()
+async def loraLoop():
+    while True:
+        await asyncio.sleep(10)
+        print("test")
 
-    if MODE is "BEACON":
+
+async def beaconLoop():
+    global cwBeacon
+    global BEACON
+    global FREQ
+    delay = " " * BEACONDELAY
+    cwBeacon = BEACON + delay
+    setFrequency(FREQ*1000)
+    print('Measured Frequency: {0:0.3f} MHz'.format(si5351.clock_0.frequency/1000000))
+    while True:
         beacon() 
+        await asyncio.sleep(0)
         if len(cwBeacon) is 0:
             delay = " " * BEACONDELAY
             cwBeacon = BEACON + delay
-        
+            print()
+            setFrequency(FREQ*1000)
+            print('Measured Frequency: {0:0.3f} MHz'.format(si5351.clock_0.frequency/1000000))
+            await asyncio.sleep(0)
+
+
+async def main():
+   #loop = asyncio.get_event_loop()
+   #loraL = asyncio.create_task(loraLoop())
+   cwL = asyncio.create_task(beaconLoop())
+   await asyncio.gather(cwL, loraL)
+
+
+asyncio.run(main()) 
