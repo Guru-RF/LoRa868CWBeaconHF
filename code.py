@@ -179,7 +179,7 @@ async def main():
    #loop = asyncio.get_event_loop()
    #loraL = asyncio.create_task(loraLoop())
    cwL = asyncio.create_task(beaconLoop())
-   await asyncio.gather(cwL, loraL)
+   await asyncio.gather(cwL)
 
 
 asyncio.run(main()) 
