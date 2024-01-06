@@ -8,6 +8,9 @@ from digitalio import DigitalInOut, Direction, Pull
 import adafruit_si5351
 import config
 import asyncio
+import adafruit_rfm9x
+from adafruit_datetime import datetime
+
 
 # User config
 WPM = config.WPM
@@ -148,38 +151,49 @@ def beacon():
     print(letter, end="")
     play(encode(letter))
 
+async def loraLoop(loop):
+    # LoRa APRS frequency
+    RADIO_FREQ_MHZ = 433.775
+    CS = digitalio.DigitalInOut(board.GP21)
+    RESET = digitalio.DigitalInOut(board.GP20)
+    spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
+    rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ, baudrate=1000000, agc=False,crc=True)
 
-async def loraLoop():
     while True:
-        await asyncio.sleep(10)
-        print("test")
-
+        await asyncio.sleep(0)
+        stamp = datetime.now()
+        print(f"{stamp}: [{config.call}] loraRunner: Waiting for lora APRS packet ...\r", end="")
+        packet = rfm9x.receive(with_header=True,timeout=10)
+        if packet is not None:
+            if packet[:3] == (b'<\xff\x01'):
+                try:
+                    rawdata = bytes(packet[3:]).decode('utf-8')
+                    stamp = datetime.now()
+                    print(f"\r{stamp}: [{config.call}] loraRunner: RSSI:{rfm9x.last_rssi} Data:{rawdata}")
+                except:
+                    print(f"{stamp}: [{config.call}] loraRunner: Lost Packet, unable to decode, skipping")
+                    continue
 
 async def beaconLoop():
     global cwBeacon
     global BEACON
     global FREQ
-    delay = " " * BEACONDELAY
-    cwBeacon = BEACON + delay
+    cwBeacon = BEACON
     setFrequency(FREQ*1000)
     print('Measured Frequency: {0:0.3f} MHz'.format(si5351.clock_0.frequency/1000000))
     while True:
         beacon() 
         await asyncio.sleep(0)
         if len(cwBeacon) is 0:
-            delay = " " * BEACONDELAY
-            cwBeacon = BEACON + delay
-            print()
-            setFrequency(FREQ*1000)
-            print('Measured Frequency: {0:0.3f} MHz'.format(si5351.clock_0.frequency/1000000))
-            await asyncio.sleep(0)
+            cwBeacon = BEACON
+            await asyncio.sleep(BEACONDELAY)
 
 
 async def main():
-   #loop = asyncio.get_event_loop()
-   #loraL = asyncio.create_task(loraLoop())
+   loop = asyncio.get_event_loop()
+   loraL = asyncio.create_task(loraLoop(loop))
    cwL = asyncio.create_task(beaconLoop())
-   await asyncio.gather(cwL)
+   await asyncio.gather(cwL, loraL)
 
 
 asyncio.run(main()) 
