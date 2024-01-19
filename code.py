@@ -20,7 +20,7 @@ BEACONDELAY = config.BEACONDELAY
 
 # Create the I2C interface.
 XTAL_FREQ = 25000000
-i2c = busio.I2C(scl=board.GP19, sda=board.GP18)
+i2c = busio.I2C(scl=board.GP27, sda=board.GP26)
 si5351 = adafruit_si5351.SI5351(i2c)
 
 # leds
