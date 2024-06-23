@@ -8,9 +8,11 @@ import adafruit_rfm9x
 import adafruit_si5351
 import board
 import busio
-import config
 import digitalio
 from adafruit_datetime import datetime
+
+import config
+
 
 # User config
 WPM = config.WPM
@@ -196,7 +198,7 @@ def beacon():
 
 async def loraLoop(loop):
     # LoRa APRS frequency
-    RADIO_FREQ_MHZ = 433.775
+    RADIO_FREQ_MHZ = 868.000
     CS = digitalio.DigitalInOut(board.GP21)
     RESET = digitalio.DigitalInOut(board.GP20)
     spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
@@ -215,7 +217,7 @@ async def loraLoop(loop):
         )
         packet = await rfm9x.areceive(with_header=True, timeout=timeout)
         if packet is not None:
-            if packet[:3] == (b"<\xff\x01"):
+            if packet[:3] == (b"<\xaa\x01"):
                 try:
                     rawdata = bytes(packet[3:]).decode("utf-8")
                     stamp = datetime.now()
